@@ -1,4 +1,8 @@
-# Chrome Web Store preparation
+# Chrome Web Store preparation (deferred)
+
+Chrome Web Store publication is deferred. The current release path is public GitHub source, an unpacked Chrome extension, and the local bridge. The drafts below are retained for a future store launch; they are not part of the active release checklist.
+
+This deferral applies to the upstream project. Forks can use [branded builds](branding.md) and adapt these drafts for their own publisher account, product name, logo and privacy policy.
 
 The source release and store publication are separate. No Chrome Web Store listing or approval is claimed by these files.
 
@@ -43,9 +47,12 @@ Data declarations must account for tab URLs/titles, website content, screenshots
 5. For automated feature verification without an AI provider, run `npx playwright install chromium` and `npm run test:browser`. The test creates a separate browser profile and local fixtures; it never uses personal browser data.
 6. Test website approval, a task-created tab, Stop and Disconnect. Do not send reviewers a personal connection credential or a browser profile.
 
-## Still needed before submission
+## Selected brand assets
 
-- Select the final logo; package its 128×128 PNG and inspect its small-size rendering.
+The selected logo is **Pocket agent**, the orange browser-window helper. The project name remains **agent-browser-extension**. The default build includes the approved mascot in the popup and connection page and in its 16, 32, 48 and 128-pixel extension icons. Use `extension/icons/icon128.png` for the store icon. See [brand assets](brand/README.md) for the original artwork and export instructions.
+
+## Only if store publication is resumed
+
 - Produce store screenshots and the required 440×280 promotional image from the shipping interface.
 - Package only the built extension directory as a ZIP, with `manifest.json` at its root; inspect the archive contents.
 - Configure the publisher account and required account verification; complete accurate privacy, permission, remote-code and distribution fields.

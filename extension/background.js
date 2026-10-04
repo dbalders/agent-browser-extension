@@ -25,7 +25,7 @@ async function badge() {
   const count = connectionInfo().sessions.length;
   const requests = access.pending.size;
   await chrome.action.setBadgeText({ text: connectionState === 'connected' ? (requests ? '?' : count ? String(count) : 'ON') : '' });
-  await chrome.action.setBadgeBackgroundColor({ color: requests ? '#996000' : '#4353D8' });
+  await chrome.action.setBadgeBackgroundColor({ color: requests ? '#996000' : '#B94B16' });
 }
 function scheduleReconnect() { clearTimeout(reconnectTimer); reconnectTimer = setTimeout(() => { void connect(); }, 5000); }
 async function connect() {

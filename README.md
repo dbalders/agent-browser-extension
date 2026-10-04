@@ -1,5 +1,7 @@
 # agent-browser-extension
 
+<img src="docs/brand/pocket-agent.png" alt="Pocket agent, the friendly browser-window mascot" width="160" height="160">
+
 A standalone Chrome extension and local bridge for autonomous AI browser tasks. Works with MCP-compatible agents and direct HTTP clients. Any compatible agent host can connect; no particular app or model provider is required.
 
 Agents discover existing tabs, claim the ones relevant to their task, or create background tabs in their own named groups. There is no required tab picker. The extension uses the signed-in profile where you install it.
@@ -32,7 +34,7 @@ Background tabs are ordinary Chrome tabs. Collapsing a group keeps the workspace
 
 ## Local setup
 
-Requires Node.js 22.12+ (22.x, 24.x or 26+) and Chrome 125+. This is currently an unpacked extension; it is not a Chrome Web Store release.
+Requires Node.js 22.12+ (22.x, 24.x or 26+) and Chrome 125+. The current distribution is GitHub source with an unpacked Chrome extension. Chrome Web Store publication is deferred.
 
 ```sh
 git clone https://github.com/dbalders/agent-browser-extension.git
@@ -113,15 +115,21 @@ MCP screenshot results include actual image content alongside geometry metadata.
 
 ## Deployment branding
 
-The same source can produce differently named builds:
+Forks can build and publish their own branded extension from the same source:
 
 ```sh
-BROWSER_DISPLAY_NAME="My Browser" npm run build
+BROWSER_DISPLAY_NAME="Example Browser" \
+BROWSER_ICON_PATH="./branding/logo.png" \
+BROWSER_BRAND_COLOR="#4353d8" \
+BROWSER_PRIVACY_URL="https://example.com/privacy" \
+npm run build
 ```
 
-`BROWSER_BRAND_COLOR="#4353d8"` customizes the buttons, monogram and toolbar badge. `BROWSER_ICON_PATH=/absolute/path/logo.png` supplies a 128×128 PNG for the Chrome extension icon and connection screens. Set these variables on the same build command. All options are optional and only affect the packaged extension.
+Pocket agent is the default logo and mascot. The extension includes transparent 16, 32, 48 and 128-pixel icons and uses the same mark in the popup and connection page. The selected artwork and export details are in [brand assets](docs/brand/README.md).
 
-This changes the packaged extension name, popup, connection page and toolbar title, while retaining the common protocol. Branding changes presentation, while the shared implementation remains independently maintained. Use organization names and marks only with the appropriate authorization. The public project is maintained at [dbalders/agent-browser-extension](https://github.com/dbalders/agent-browser-extension).
+Supply your own 128×128 PNG at the icon path. The build changes the extension name, description, popup, connection page, toolbar title, icon, accent color and privacy link. A custom logo replaces the default mascot files in the package. All overrides are optional and affect only the packaged extension; a plain `npm run build` restores the upstream brand.
+
+See [branded builds for forks](docs/branding.md) for the settings, PowerShell commands, and extension ZIP packaging. Forks can pursue their own store publication while upstream store work is deferred. The common local bridge and MCP protocol stay compatible. The independent upstream project remains [dbalders/agent-browser-extension](https://github.com/dbalders/agent-browser-extension).
 
 ## Current limits
 
