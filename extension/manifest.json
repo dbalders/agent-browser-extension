@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "agent-browser-extension",
+  "version": "0.1.0",
+  "description": "Connect your Chrome tabs to a local agent-browser-extension bridge.",
+  "minimum_chrome_version": "125",
+  "permissions": ["tabs", "tabGroups", "debugger", "storage", "alarms", "downloads", "webNavigation"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "agent-browser-extension", "default_popup": "popup.html" },
+  "options_page": "options.html",
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; connect-src ws://127.0.0.1:*" }
+}

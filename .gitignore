@@ -1,0 +1,13 @@
+node_modules/
+connection.json
+.agent-browser-extension/
+dist/
+coverage/
+.env*
+!.env.example
+*.log
+.DS_Store
+test-results/
+playwright-report/
+.browser-data/
+output/
