@@ -10,6 +10,14 @@ const sourceDirectories = new Map([
   ['tests', new Set(['js', 'ts'])], ['scripts', new Set(['mjs'])],
   ['docs', new Set(['md'])], ['.github/workflows', new Set(['yml', 'yaml'])],
 ]);
+// Only reviewed brand images may bypass text inspection. Keep PNGs outside these exact paths excluded.
+const reviewedImages = new Map([
+  ['docs/brand/pocket-agent.png', 'df1095d26c284f6e8a6f0b363e06d80fd09d4123bf8623d984f6d5bb3031bd64'],
+  ['extension/icons/icon16.png', '1db677bdb07ae16921edf5e91f80941887d3a7a44fcd5cbf3abb208ad6592b08'],
+  ['extension/icons/icon32.png', '3325423f0db45bd3fd0412cf343ac25fe009ff595f28c2b2b8f219f49f9eb49b'],
+  ['extension/icons/icon48.png', '7cdf18298b36d668f08f1b0efc222bb7f6482c039367d8199615af73d1b33ce0'],
+  ['extension/icons/icon128.png', 'ffd33c51b19d81dbff1d6dbe708056c7e1d594da646baa0838db61bc52ac705b'],
+]);
 const approvedLicenses = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0']);
 const sha256 = data => createHash('sha256').update(data).digest('hex');
 const sort = values => values.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
@@ -46,9 +54,11 @@ export async function collectSource(root = projectRoot) {
     if (!info.isFile() || info.size > 2 * 1024 * 1024) throw new Error(`${path}: expected a source file below 2 MiB`);
     if (suspectNames.test(path)) throw new Error(`${path}: private or generated filename in source directory`);
     const data = await readFile(join(root, path));
-    const findings = inspectText(path, data);
+    const digest = sha256(data);
+    if (reviewedImages.has(path) && reviewedImages.get(path) !== digest) throw new Error(`${path}: image does not match its reviewed digest`);
+    const findings = reviewedImages.has(path) ? [] : inspectText(path, data);
     if (findings.length) throw new Error(findings.join('\n'));
-    files.push({ path, data, sha256: sha256(data), size: data.length });
+    files.push({ path, data, sha256: digest, size: data.length });
   };
   for (const path of requiredFiles) await add(path);
   for (const [directory, extensions] of sourceDirectories) {
@@ -59,7 +69,7 @@ export async function collectSource(root = projectRoot) {
         if (!/^[A-Za-z0-9_.-]+$/u.test(name) || name.startsWith('.') || suspectNames.test(child)) throw new Error(`${directory}: unexpected or private source entry`);
         const info = await inspectPath(root, child);
         if (info.isDirectory()) await walk(child);
-        else if (extensions.has(name.split('.').at(-1))) await add(child);
+        else if (extensions.has(name.split('.').at(-1)) || reviewedImages.has(child)) await add(child);
         else throw new Error(`${child}: file type is not in the source release allowlist`);
       }
     };
@@ -99,11 +109,17 @@ export async function checkRelease(root = projectRoot) {
   };
   const manifest = parse('package.json');
   const dependencies = inspectDependencies(manifest, parse('package-lock.json'));
-  if (parse('extension/manifest.json').version !== manifest.version) throw new Error('Extension and package versions must agree.');
+  const extension = parse('extension/manifest.json');
+  if (extension.version !== manifest.version) throw new Error('Extension and package versions must agree.');
+  const actionIcons = extension.action?.default_icon;
+  const declaredIcons = [...Object.values(extension.icons ?? {}), ...(typeof actionIcons === 'string' ? [actionIcons] : Object.values(actionIcons ?? {}))];
+  for (const icon of declaredIcons) {
+    if (!files.some(file => file.path === `extension/${icon}`)) throw new Error('Extension icon is missing from the inspected source.');
+  }
   if (!files.find(file => file.path === 'LICENSE').data.toString('utf8').includes('Apache License')) throw new Error('Missing Apache license text.');
   return { files, report: {
     formatVersion: 1, name: manifest.name, version: manifest.version, license: manifest.license,
-    scope: 'Allowlisted current source only; no Git history, generated output, dependencies, or private runtime files.',
+    scope: 'Allowlisted current source and reviewed brand assets; no Git history, generated builds, dependencies, or private runtime files.',
     files: files.map(({ path, sha256, size }) => ({ path, sha256, size })), dependencies,
   } };
 }

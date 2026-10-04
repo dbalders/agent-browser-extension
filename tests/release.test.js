@@ -88,6 +88,21 @@ describe('source release boundaries', () => {
     await expect(collectSource(root)).rejects.toThrow(/allowlist/);
   });
 
+  it('preserves reviewed icon bytes in source archives and rejects changed or missing icons', async () => {
+    const { root, manifest } = await fixture();
+    const path = 'extension/icons/icon16.png';
+    const icon = await readFile(new URL('../extension/icons/icon16.png', import.meta.url));
+    await mkdir(join(root, 'extension/icons'));
+    await writeFile(join(root, path), icon);
+    await writeFile(join(root, 'extension/manifest.json'), JSON.stringify({ version: manifest.version, icons: { 16: 'icons/icon16.png' } }));
+    const entries = unpack((await buildSourceArchive(root)).archive);
+    expect(entries.get(path)).toEqual(icon);
+    await writeFile(join(root, path), Buffer.concat([icon, Buffer.from('unreviewed metadata')]));
+    await expect(collectSource(root)).rejects.toThrow(/reviewed digest/);
+    await rm(join(root, path));
+    await expect(checkRelease(root)).rejects.toThrow(/icon is missing/);
+  });
+
   it('rejects symlinked files and source parent directories', async () => {
     const { root } = await fixture();
     await symlink(join(root, 'README.md'), join(root, 'src', 'linked.ts'));

@@ -2,6 +2,10 @@
 
 The current deliverable is buildable source for an unpacked extension and a local bridge. The public repository is [dbalders/agent-browser-extension](https://github.com/dbalders/agent-browser-extension). Preparing a source archive does not itself create a GitHub release, publish an npm package, or submit a Chrome Web Store listing. `package.json` remains private to prevent accidental npm publication.
 
+Chrome Web Store publication is deferred. Store screenshots, promotional graphics, submission ZIPs and publisher-account setup are outside the current release scope. The active release checklist covers GitHub source distribution and the documented unpacked-extension setup.
+
+Forks can independently use the [branding and extension packaging workflow](branding.md) for their own distribution. Upstream's store deferral does not restrict that workflow.
+
 ## Reproducible local candidate
 
 Run the project checks from the intended source directory:
@@ -19,13 +23,13 @@ npm run package:source
 
 The source packager writes these local artifacts under the ignored `test-results/release/` directory:
 
-- `agent-browser-extension-<version>-source.tar.gz`: allowlisted source, tests, docs, CI, package metadata, license and notice.
+- `agent-browser-extension-<version>-source.tar.gz`: allowlisted source, reviewed brand images, tests, docs, CI, package metadata, license and notice.
 - `SHA256SUMS`: archive digest for transfer verification.
 - `RELEASE-MANIFEST.json`: every included source path, byte count, SHA-256 digest, and locked dependency version/license/integrity record. The manifest is also inside the archive.
 
 The archive has sorted entries, fixed timestamps, normalized file modes and no machine-specific ownership. Re-running it on identical source bytes and the same Node/zlib implementation produces the same digest. It packages the bytes that passed inspection, so subsequent file changes cannot slip into that candidate. No Git command is executed and no history is included.
 
-The allowlist contains explicit top-level project files and these text-only directories: `src/`, `extension/`, `tests/`, `scripts/`, `docs/`, and `.github/workflows/`. Credentials, profiles, screenshots, logs, dependency folders and build output outside this list are never read or copied. Unexpected files and symlinks inside the allowlist fail the check. Adding a new source format requires a reviewed allowlist change in `scripts/check-release.mjs`.
+The allowlist contains explicit top-level project files and approved text formats in `src/`, `extension/`, `tests/`, `scripts/`, `docs/`, and `.github/workflows/`. The five selected [brand images](brand/README.md) are also included by exact path and reviewed SHA-256 digest; changed image bytes fail inspection. Credentials, profiles, screenshots, logs, dependency folders and build output outside this list are never read or copied. Unexpected files and symlinks inside the allowlist fail the check. Adding a new source format or brand image requires a reviewed allowlist change in `scripts/check-release.mjs`.
 
 Unpack the archive into a new directory and repeat install, check, tests, build, and isolated browser smoke there. This proves the published source can work without unrelated files from the development checkout. Keep the resulting command output and archive digest with the private release evidence until the owner approves distribution. Review the candidate's contents before sharing.
 
@@ -50,6 +54,6 @@ CI configuration is not evidence of a successful hosted run. Local macOS success
 3. Review the source candidate, dependency inventory and every Git object being published. The initial release uses a fresh source snapshot; private development history and local checkpoint refs are not published.
 4. Require passing hosted checks for the exact release commit. The workflow exercises Node 22, 24 and 26 on Linux and Node 24 on macOS/Windows; real-browser smoke runs on Linux. Record additional local browser evidence separately.
 5. Create a version tag and GitHub prerelease with the inspected source archive, `RELEASE-MANIFEST.json`, `SHA256SUMS`, setup instructions and release notes. Read back public visibility, tag commit and downloaded asset checksums.
-6. Store submission and npm publication are separate operations. The first source release does not claim a Chrome Web Store listing or published npm package. See [store preparation](chrome-web-store.md).
+6. Verify the published setup instructions cover the local bridge and Chrome's **Load unpacked** installation path. Store submission and npm publication are separate operations; the [deferred store drafts](chrome-web-store.md) do not block this release.
 
 Feature claims must describe observed behavior. Tool count, unit tests, or a successful local smoke do not prove parity with every commercial browser agent or compatibility with every model provider.
