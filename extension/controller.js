@@ -42,6 +42,18 @@ export class BrowserController {
   current(generation) { if (generation !== this.generation) fail('DISCONNECTED', 'This command belongs to a previous bridge connection.'); }
   deadline(value) { if (value !== undefined && Date.now() > value) fail('COMMAND_EXPIRED', 'This browser command expired before it could complete.'); }
   storedSession(id) { return Object.hasOwn(this.state.sessions, id) ? this.state.sessions[id] : undefined; }
+  retireCompletedSessions() {
+    // Preserve Stop tombstones, failed cleanup, and sessions whose stale queued
+    // commands still need to observe their ended state before they can retire.
+    const busy = this.scheduler.sessionIds();
+    for (const tab of Object.values(this.state.tabs)) busy.add(tab.sessionId);
+    const retired = new Set();
+    for (const [id, session] of Object.entries(this.state.sessions)) {
+      if (!session.ended || session.stopped || busy.has(id)) continue;
+      delete this.state.sessions[id]; retired.add(id);
+    }
+    for (const [id, record] of Object.entries(this.state.downloads)) if (retired.has(record.sessionId)) delete this.state.downloads[id];
+  }
   session(id) {
     if (this.paused) fail('DISCONNECTED', 'The local browser bridge is disconnected.');
     const session = this.storedSession(id);
@@ -287,10 +299,11 @@ export class BrowserController {
     if (operation === 'status') return { browser: 'Chrome', connected: true, sessions: Object.values(this.state.sessions).filter(s => !s.ended).length };
     if (operation === 'session.list') return Object.entries(this.state.sessions).map(([sessionId, session]) => ({ sessionId, ...session, tabCount: Object.values(this.state.tabs).filter(t => t.sessionId === sessionId).length }));
     if (operation === 'session.start') {
+      this.retireCompletedSessions();
       const old = this.storedSession(id);
       if (old?.stopped) fail('SESSION_STOPPED', 'The user stopped this session. Start a new session with a new ID.');
       if (Object.values(this.state.sessions).filter(s => !s.ended).length >= 32 && (!old || old.ended)) fail('SESSION_LIMIT', 'Too many active browser sessions.');
-      if (Object.keys(this.state.sessions).length >= 256 && !old) fail('SESSION_LIMIT', 'This browser connection has reached its session limit. Restart Chrome to clear completed sessions.');
+      if (Object.keys(this.state.sessions).length >= 256 && !old) fail('SESSION_LIMIT', 'This browser connection has reached its retained session limit. Retry unfinished cleanup or restart Chrome to clear stopped sessions.');
       this.state.sessions[id] = old && !old.ended ? { ...old, name: title(args.name) } : { name: title(args.name), startedAt: Date.now(), groups: {} };
       await this.persist(); return { sessionId: id, ...this.state.sessions[id] };
     }

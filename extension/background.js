@@ -16,7 +16,7 @@ const ready = Promise.all([
   chrome.storage.session.get(STATE_KEY).then(saved => controller.restore(saved[STATE_KEY])),
   chrome.storage.local.get(ACCESS_KEY).then(saved => access.restore(saved[ACCESS_KEY])),
 ]);
-let socket; let reconnectTimer; let heartbeat; let connectionState = 'disconnected'; let lastError = ''; let configuredPort = 43187;
+let socket; let reconnectTimer; let heartbeat; let connectionState = 'disconnected'; let lastError = ''; let configuredPort = 43187; let connectionGeneration = 0;
 
 function connectionInfo() {
   return { state: connectionState, port: configuredPort, error: lastError, access: access.snapshot(), sessions: Object.entries(controller.state.sessions).filter(([, session]) => !session.ended).map(([sessionId, session]) => ({ sessionId, name: session.name, stopped: !!session.stopped, tabs: Object.entries(controller.state.tabs).filter(([, tab]) => tab.sessionId === sessionId).map(([tabId, tab]) => ({ tabId: Number(tabId), created: tab.created, disposition: tab.disposition })) })) };
@@ -29,9 +29,11 @@ async function badge() {
 }
 function scheduleReconnect() { clearTimeout(reconnectTimer); reconnectTimer = setTimeout(() => { void connect(); }, 5000); }
 async function connect() {
+  const generation = connectionGeneration;
   await ready;
-  if (socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(socket.readyState)) return;
+  if (generation !== connectionGeneration || (socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(socket.readyState))) return;
   const { bridgeSettings: settings } = await chrome.storage.local.get(SETTINGS_KEY);
+  if (generation !== connectionGeneration || (socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(socket.readyState))) return;
   if (!settings?.enabled || !settings.token) { connectionState = 'disconnected'; return; }
   configuredPort = settings.port || 43187; connectionState = 'connecting';
   const candidate = new WebSocket(`ws://127.0.0.1:${configuredPort}/extension?token=${encodeURIComponent(settings.token)}`);
@@ -68,6 +70,7 @@ async function connect() {
   };
 }
 async function disconnect() {
+  connectionGeneration++;
   clearTimeout(reconnectTimer); clearInterval(heartbeat); controller.suspend();
   const old = socket; socket = undefined; old?.close(); connectionState = 'disconnected';
   await pages.disconnect(); await badge();

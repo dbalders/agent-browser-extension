@@ -95,6 +95,49 @@ describe('extension session ownership and lifecycle', () => {
     await expect(f.execute('a', 'tabs.list')).rejects.toMatchObject({ code: 'SESSION_STOPPED' });
     await expect(f.execute('new-session', 'tabs.list')).rejects.toMatchObject({ code: 'SESSION_INACTIVE' });
   });
+  it('retires over 256 completed tasks without forgetting revocation, queued work, or failed cleanup', async () => {
+    const f = fixture(); await f.start('stopped'); await f.controller.stop('stopped');
+    await f.start('cleanup');
+    const scratch = await f.execute('cleanup', 'tabs.open', { url: 'https://example.test/scratch' });
+    f.chrome.tabs.remove.mockRejectedValueOnce(new Error('Close failed'));
+    expect(await f.execute('cleanup', 'session.end')).toMatchObject({ errors: [{ tabId: scratch.tabId, message: 'Close failed' }] });
+
+    await f.start('completed'); await f.execute('completed', 'tabs.claim', { tabId: 1 });
+    const output = await f.execute('completed', 'tabs.open', { url: 'https://example.test/output' });
+    const handoff = await f.execute('completed', 'tabs.open', { url: 'https://example.test/login' });
+    await f.execute('completed', 'tabs.mark', { tabId: output.tabId, disposition: 'deliverable' });
+    await f.execute('completed', 'tabs.mark', { tabId: handoff.tabId, disposition: 'handoff' });
+    await f.controller.downloaded({ id: 99, referrer: f.tabs.get(1).url });
+    expect(await f.execute('completed', 'session.end')).toMatchObject({ released: [1], retained: [output.tabId, handoff.tabId] });
+
+    // A tab cleanup barrier can leave stale work queued for an ended session.
+    await f.start('blocking'); await f.execute('blocking', 'tabs.claim', { tabId: 1 });
+    let entered; let release; const detaching = new Promise(resolve => { entered = resolve; });
+    f.pages.detach.mockImplementationOnce(async () => { entered(); await new Promise(resolve => { release = resolve; }); });
+    const ending = f.execute('blocking', 'session.end'); await detaching;
+    await f.start('queued'); await f.execute('queued', 'session.end');
+    const stale = expect(f.execute('queued', 'tabs.navigate', { tabId: 1, url: 'https://example.test/stale' })).rejects.toMatchObject({ code: 'SESSION_INACTIVE' });
+    try {
+      for (let index = 0; index < 300; index++) {
+        const id = `completed-${index}`; await f.start(id); await f.execute(id, 'session.end');
+      }
+      expect(await f.execute('observer', 'status')).toMatchObject({ sessions: 0 });
+      expect(f.controller.state.sessions.queued).toMatchObject({ ended: true });
+      expect(f.controller.state.sessions.cleanup).toMatchObject({ ended: true });
+      expect(f.controller.state.tabs[scratch.tabId].sessionId).toBe('cleanup');
+      expect(f.controller.state.sessions.completed).toBeUndefined();
+      expect(f.controller.state.downloads[99]).toBeUndefined();
+    } finally { release(); await ending; await stale; }
+
+    await expect(f.start('next-task')).resolves.toMatchObject({ sessionId: 'next-task' });
+    await expect(f.start('stopped')).rejects.toMatchObject({ code: 'SESSION_STOPPED' });
+    await expect(f.execute('stopped', 'tabs.list')).rejects.toMatchObject({ code: 'SESSION_STOPPED' });
+    await expect(f.execute('completed', 'tabs.list')).rejects.toMatchObject({ code: 'SESSION_INACTIVE' });
+    expect(await f.execute('cleanup', 'session.end')).toMatchObject({ closed: [scratch.tabId], errors: [] });
+    expect([...f.tabs.keys()]).toEqual([1, output.tabId, handoff.tabId]);
+    expect(f.chrome.tabs.create).toHaveBeenCalledTimes(3);
+    expect(f.chrome.tabs.update).not.toHaveBeenCalled();
+  });
   it('pauses action on disconnect without losing ownership needed for reconnect', async () => {
     const f = fixture(); await f.start(); await f.execute('a', 'tabs.claim', { tabId: 1 }); f.controller.paused = true;
     await expect(f.execute('a', 'page.fill', { tabId: 1, selector: 'input', text: 'value' })).rejects.toMatchObject({ code: 'DISCONNECTED' });

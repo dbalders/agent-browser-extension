@@ -92,7 +92,7 @@ export class WebsiteAccess {
       origin, sessionId: id, capability: required,
       taskName: typeof taskName === 'string' ? taskName.replace(/[\u0000-\u001f\u007f]/gu, '').trim().slice(0, 80) || 'Browser task' : 'Browser task',
     });
-    fail('SITE_ACCESS_REQUIRED', `${origin} needs user approval for ${required === 'debug' ? 'debugging' : 'browser access'} in the extension. Approval does not replay this action; inspect the page before deciding whether to try again.`);
+    fail('SITE_ACCESS_REQUIRED', `${origin} needs user approval for ${required === 'debug' ? 'debugging' : 'browser access'} in the extension. Approval does not replay this action; inspect the page before deciding whether to try again. Finishing the task removes its pending request. After finishing, direct the user to the extension settings: enter this origin in Website origin and choose Always allow${required === 'debug' ? ', then Allow debugging for the saved site' : ''}, then ask the agent to retry. Do not say the request is still waiting after finishing.`);
   }
 
   snapshot() {

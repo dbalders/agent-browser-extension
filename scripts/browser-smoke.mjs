@@ -158,12 +158,41 @@ try {
   await options.goto(`chrome-extension://${extensionId}/options.html`);
   const manifest = JSON.parse(await readFile('dist/extension/manifest.json', 'utf8'));
   assert.equal(await options.locator('h1').textContent(), manifest.name);
+  await options.locator('#status').filter({ hasText: 'Bridge disconnected' }).waitFor();
   await options.getByLabel('Port', { exact: true }).fill(String(bridge.port));
   await options.getByLabel('Connection code', { exact: true }).fill(bridge.token);
   await options.getByRole('button', { name: 'Connect', exact: true }).click();
   assert.equal(await options.locator('#error').textContent(), '', 'A valid custom bridge token must pair through the extension UI');
-  await until(async () => (await client.status()).connected, 'Extension did not pair');
+  await until(async () => (await client.status()).connected, 'Extension did not pair').catch(async error => {
+    const state = await options.evaluate(async () => {
+      const status = await chrome.runtime.sendMessage({ type: 'status' });
+      return { state: status.value?.state, port: status.value?.port, error: status.value?.error };
+    });
+    throw new Error(`${error.message}: ${JSON.stringify(state)}`);
+  });
   console.log('PASS: real extension paired through its connection screen');
+
+  // Reproduce an agent handing off for permission and ending its task.
+  // No automatic replay or stale approval card may be promised to the user.
+  await client.execute('permission-handoff', 'session.start', { name: 'Permission handoff' });
+  const beforeHandoff = (await client.execute('permission-handoff', 'tabs.list')).tabs.length;
+  await assert.rejects(client.execute('permission-handoff', 'tabs.open', { url }), error =>
+    error.code === 'SITE_ACCESS_REQUIRED' && error.message.includes('Website origin'));
+  assert.equal((await client.execute('permission-handoff', 'access.status')).pending.length, 1);
+  assert.equal((await client.execute('permission-handoff', 'tabs.list')).tabs.length, beforeHandoff);
+  await options.locator('#access-requests .site-card').waitFor();
+  await client.execute('permission-handoff', 'session.end');
+  await until(async () => await options.locator('#access-requests .site-card').count() === 0, 'Finish left a pending approval card');
+  await options.getByLabel('Website origin', { exact: true }).fill(new URL(url).origin);
+  await options.locator('#site-form').getByRole('button', { name: 'Always allow', exact: true }).click();
+  const handoffSite = options.locator('#saved-sites .site-card').filter({ has: options.getByText(new URL(url).origin, { exact: true }) });
+  await handoffSite.getByText(/Browser access: Allowed/).waitFor();
+  await client.execute('permission-retry', 'session.start', { name: 'Permission retry' });
+  assert.equal((await client.execute('permission-retry', 'tabs.list')).tabs.length, beforeHandoff, 'Grant must not replay navigation');
+  const retriedTab = await client.execute('permission-retry', 'tabs.open', { url, background: true });
+  assert.ok((await client.execute('permission-retry', 'session.end')).closed.includes(retriedTab.tabId));
+  await handoffSite.getByRole('button', { name: 'Revoke access', exact: true }).click();
+  console.log('PASS: permission handoff clears pending request, manual exact-origin approval enables explicit retry without replay');
 
   const userPage = await context.newPage();
   await userPage.goto(`${url}?user`); await userPage.bringToFront();
@@ -645,6 +674,48 @@ try {
   await assert.rejects(call('session.start', { name: 'Cannot restart stopped session' }, 'smoke-other'), e => e.code === 'SESSION_STOPPED');
   await until(async () => await userPage.title() === 'Browser smoke fixture', 'Stop left a user tab marker');
   console.log('PASS: user Stop revokes and cleans up the session');
+
+  for (let index = 0; index < 300; index++) {
+    const session = `completed-task-${index}`;
+    await call('session.start', { name: 'Completed task' }, session);
+    await call('session.end', {}, session);
+  }
+  await assert.rejects(call('session.start', { name: 'Still stopped' }, 'smoke-other'), error => error.code === 'SESSION_STOPPED');
+  await call('session.start', { name: 'After completed tasks' }, 'after-completed-tasks');
+  assert.ok((await call('tabs.list', {}, 'after-completed-tasks')).tabs.some(tab => tab.tabId === userTab.tabId));
+  await call('session.end', {}, 'after-completed-tasks');
+  console.log('PASS: more than 256 completed tasks preserve capacity, stopped-task rejection and user tabs');
+
+  // Delay the real worker's connection settings read across a user Disconnect.
+  await worker.evaluate(() => {
+    const get = chrome.storage.local.get.bind(chrome.storage.local);
+    let reads = 0;
+    globalThis.smokeConnection = { pending: false, restore: () => { chrome.storage.local.get = get; } };
+    chrome.storage.local.get = async (...args) => {
+      const value = await get(...args);
+      if (args[0] === 'bridgeSettings' && ++reads === 2) {
+        globalThis.smokeConnection.pending = true;
+        return new Promise(resolve => { globalThis.smokeConnection.release = () => resolve(value); });
+      }
+      return value;
+    };
+  });
+  try {
+    await options.evaluate(port => { globalThis.smokeReconnect = chrome.runtime.sendMessage({ type: 'connect', port }); }, bridge.port);
+    await until(() => worker.evaluate(() => globalThis.smokeConnection.pending), 'Reconnect did not reach the delayed settings read');
+    await options.getByRole('button', { name: 'Disconnect', exact: true }).click();
+    assert.equal(await worker.evaluate(async () => (await chrome.storage.local.get('bridgeSettings')).bridgeSettings.enabled), false);
+    await worker.evaluate(() => globalThis.smokeConnection.release());
+    const staleResult = await options.evaluate(() => globalThis.smokeReconnect);
+    assert.equal(staleResult.ok, true);
+    assert.equal(staleResult.value.state, 'disconnected', 'Stale connection attempt undid Disconnect');
+    assert.equal((await client.status()).connected, false);
+  } finally {
+    await worker.evaluate(() => { globalThis.smokeConnection.restore(); delete globalThis.smokeConnection; });
+  }
+  await options.getByRole('button', { name: 'Connect', exact: true }).click();
+  await until(async () => (await client.status()).connected, 'An explicit connection after Disconnect did not succeed');
+  console.log('PASS: Disconnect cancels an in-flight reconnect; explicit user reconnection still succeeds');
   console.log('Real Chrome smoke passed.');
 } finally {
   await context?.close(); await bridge?.close(); await benchmark?.close();
